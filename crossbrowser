@@ -1,0 +1,43 @@
+#!/usr/bin/env ruby
+
+children = []
+exit_status = 0
+
+%w{chrome firefox}.each do |browser_name|
+  stdout_read, stdout_write = IO.pipe
+  stderr_read, stderr_write = IO.pipe
+  if File.exists?(File.expand_path("~/.rvm/scripts/rvm"))
+    cmd = "source \"$HOME/.rvm/scripts/rvm\" && "
+  elsif File.exists?("/usr/local/rvm/scripts/rvm")
+    cmd = "source \"/usr/local/rvm/scripts/rvm\" && "
+  end
+  pid = Process.spawn("#{cmd} BROWSER=#{browser_name} bundle exec cucumber -c #{$*.join(" ")}", :out => stdout_write, :err => stderr_write)
+  children << {stdout_read:stdout_read, stdout_write:stdout_write, stderr_read:stderr_read, stderr_write:stderr_write, pid:pid, browser:browser_name}
+end
+
+children.each do |child|
+  _, status = Process.wait2(child[:pid])
+
+  # close write ends so we could read them
+  child[:stdout_write].close
+  child[:stderr_write].close
+
+  stdout = child[:stdout_read].readlines
+  stderr = child[:stderr_read].readlines
+
+  # dispose the read ends of the pipes
+  child[:stdout_read].close
+  child[:stderr_read].close
+
+  puts child[:browser].upcase + " " + ("=" * (79-child[:browser].length))
+  puts stdout
+  $stderr.puts stderr
+  puts("-" * 80)
+  puts
+  if status.exitstatus != 0
+    exit_status = status.exitstatus
+  end
+end
+
+puts "EXIT STATUS: #{exit_status}"
+exit exit_status
